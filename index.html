@@ -736,6 +736,25 @@ body.light-theme #anpr-table th[style*="sticky"][style*="right"] {
   <button onclick="document.getElementById('ios-install-banner').style.display='none'" style="margin-left:auto;background:none;border:none;color:var(--red-bright);cursor:pointer;font-size:14px;line-height:1;">✕</button>
 </div>
 
+<!-- Auto-popup install prompt: fires whenever the browser reports the app is installable (Windows Edge/Chrome, desktop Chrome, Android Chrome, etc.) -->
+<div id="pwa-auto-install" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:998;align-items:center;justify-content:center;backdrop-filter:blur(4px);">
+  <div style="width:340px;max-width:90vw;background:rgba(10,10,10,0.92);border:1px solid var(--border-red);border-radius:14px;padding:24px 22px;box-shadow:0 12px 40px rgba(0,0,0,0.6),0 0 0 1px rgba(232,0,28,0.15);backdrop-filter:blur(20px);font-family:'Rajdhani',sans-serif;">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;">
+      <img src="icons/icon-96.png" width="44" height="44" style="border-radius:10px;flex-shrink:0;">
+      <div>
+        <div style="font-weight:700;font-size:15px;letter-spacing:1px;color:var(--text);">Install CRM Recovery Unit</div>
+        <div style="font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--muted);letter-spacing:1px;margin-top:2px;">Runs as its own app — no browser tab</div>
+      </div>
+    </div>
+    <p style="font-size:12px;color:var(--text2);line-height:1.5;margin:0 0 18px;">Add this dashboard to your device for quicker access and offline use. It opens in its own window, just like a regular installed app.</p>
+    <div style="display:flex;gap:10px;justify-content:flex-end;">
+      <button onclick="pwaDismissAutoInstall()" style="font-family:'Rajdhani',sans-serif;font-weight:600;font-size:11px;letter-spacing:1px;padding:8px 16px;border-radius:8px;border:1px solid rgba(255,255,255,0.14);background:rgba(255,255,255,0.05);color:var(--text2);cursor:pointer;text-transform:uppercase;">Not Now</button>
+      <button onclick="pwaConfirmAutoInstall()" style="font-family:'Rajdhani',sans-serif;font-weight:700;font-size:11px;letter-spacing:1px;padding:8px 18px;border-radius:8px;border:1px solid rgba(232,0,28,0.5);background:rgba(232,0,28,0.18);color:#ff3350;cursor:pointer;text-transform:uppercase;">⤓ Install</button>
+    </div>
+  </div>
+</div>
+
+
 <!-- MASTER CLEAR MODAL -->
 <div id="clear-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:999;align-items:center;justify-content:center;">
   <div style="background:#111520;border:2px solid #ff4d6d;border-radius:14px;padding:36px 40px;max-width:440px;width:90%;text-align:center;box-shadow:0 0 60px rgba(255,77,109,0.3);">
@@ -3027,17 +3046,32 @@ function updateT5Charts() {
   let deferredPrompt = null;
   const installBtn = document.getElementById('pwa-install-btn');
   const iosBanner = document.getElementById('ios-install-banner');
+  const autoModal = document.getElementById('pwa-auto-install');
+
+  const DISMISS_KEY = 'crmRecoveryInstallDismissedAt';
+  const DISMISS_DAYS = 14; // how long to stay quiet after "Not Now"
 
   const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) ||
                 (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   const isStandalone = window.matchMedia('(display-mode: standalone)').matches ||
                         window.navigator.standalone === true;
 
-  // Chrome / Edge / Android: browser tells us installability is available.
+  function recentlyDismissed() {
+    const ts = +localStorage.getItem(DISMISS_KEY);
+    if (!ts) return false;
+    return (Date.now() - ts) < DISMISS_DAYS * 24 * 60 * 60 * 1000;
+  }
+
+  // Chrome / Edge (Windows, macOS, Linux, Android) fire this when the
+  // PWA install criteria (manifest + service worker + icons + HTTPS) are met.
   window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault();
     deferredPrompt = e;
     if (installBtn) installBtn.style.display = 'inline-block';
+    if (autoModal && !isStandalone && !recentlyDismissed()) {
+      // Small delay so it doesn't flash before the page has settled.
+      setTimeout(() => { autoModal.style.display = 'flex'; }, 1200);
+    }
   });
 
   // iOS Safari has no beforeinstallprompt — show the button proactively
@@ -3062,12 +3096,29 @@ function updateT5Charts() {
     }
   };
 
+  // Buttons inside the auto-popup modal
+  window.pwaConfirmAutoInstall = function () {
+    if (autoModal) autoModal.style.display = 'none';
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      deferredPrompt.userChoice.finally(() => { deferredPrompt = null; });
+    }
+  };
+  window.pwaDismissAutoInstall = function () {
+    if (autoModal) autoModal.style.display = 'none';
+    try { localStorage.setItem(DISMISS_KEY, String(Date.now())); } catch (e) {}
+  };
+
   window.addEventListener('appinstalled', () => {
     if (installBtn) installBtn.style.display = 'none';
+    if (autoModal) autoModal.style.display = 'none';
     deferredPrompt = null;
   });
 
-  if (isStandalone && installBtn) installBtn.style.display = 'none';
+  if (isStandalone) {
+    if (installBtn) installBtn.style.display = 'none';
+    if (autoModal) autoModal.style.display = 'none';
+  }
 
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {

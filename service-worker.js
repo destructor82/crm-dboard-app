@@ -1,7 +1,7 @@
 // CRM Recovery Unit — Service Worker
 // Bump CACHE_VERSION any time index.html (or any cached asset) changes,
 // so returning users get the update instead of a stale cached copy.
-const CACHE_VERSION = 'v1';
+const CACHE_VERSION = 'v2';
 const CACHE_NAME = `crm-recovery-${CACHE_VERSION}`;
 
 const CORE_ASSETS = [
